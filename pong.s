@@ -227,28 +227,40 @@ main:
 
         case_none:
         # Clearing the last frame of the Ball
-        lw $a0, last_ball_x
-        lw $a1, last_ball_y
-        li $a2, BALL_SIZE
-        li $a3, BALL_SIZE
-        li $t1, CLEAR_COLOR
-        jal draw_rect
+        lw  $t0,      ball_y
+        lw  $t1, last_ball_y
+        beq $t0, $t1, skip_clearing_ball
+            lw $a0, last_ball_x
+            lw $a1, last_ball_y
+            li $a2, BALL_SIZE
+            li $a3, BALL_SIZE
+            li $t1, CLEAR_COLOR
+            jal draw_rect
+        skip_clearing_ball:
 
         # Clearing the last frame of the paddle of Player 0
-        lw $a0, last_paddle_0_x
-        lw $a1, last_paddle_0_y
-        li $a2, PADDLE_WIDTH
-        li $a3, PADDLE_HEIGHT
-        li $t1, CLEAR_COLOR
-        jal draw_rect
+        lw  $t0,      paddle_0_y
+        lw  $t1, last_paddle_0_y
+        beq $t0, $t1, skip_clearing_paddle_0
+            lw $a0, last_paddle_0_x
+            lw $a1, last_paddle_0_y
+            li $a2, PADDLE_WIDTH
+            li $a3, PADDLE_HEIGHT
+            li $t1, CLEAR_COLOR
+            jal draw_rect
+        skip_clearing_paddle_0:
 
         # Clearing the last frame of the paddle of Player 1
-        lw $a0, last_paddle_1_x
-        lw $a1, last_paddle_1_y
-        li $a2, PADDLE_WIDTH
-        li $a3, PADDLE_HEIGHT
-        li $t1, CLEAR_COLOR
-        jal draw_rect
+        lw  $t0,      paddle_1_y
+        lw  $t1, last_paddle_1_y
+        beq $t0, $t1, skip_clearing_paddle_1
+            lw $a0, last_paddle_1_x
+            lw $a1, last_paddle_1_y
+            li $a2, PADDLE_WIDTH
+            li $a3, PADDLE_HEIGHT
+            li $t1, CLEAR_COLOR
+            jal draw_rect
+        skip_clearing_paddle_1:
 
         # Drawing the Ball
         lw $a0, ball_x
