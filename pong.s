@@ -2,90 +2,92 @@
 # Data Section
 # ----------------------------------------------- #
 .data
+    # BITMAP SETTINGS
+    # - Unit Width in pixels: 1
+    # - Unit Heigh in pixels: 1
+    # - Display Width in pixels:  512
+    # - Display Height in pixels: 256
+
     .eqv SCREEN_WIDTH  512
     .eqv SCREEN_HEIGHT 256
 
-    framebuffer: .space 0x80000 # 4 * 512 * 256
+    .eqv CLEAR_COLOR 0x00000000
+    .eqv COLOR_WHITE 0x00ffffff
+    
+    framebuffer: .space 0x80000 # Always enough for 512 * 256
+    
+    .eqv KEY_EVENT   0xffff0000
+    .eqv KEY_PRESSED 0xffff0004
 
-    .eqv BALL_SIZE 5
-    .eqv BALL_STARTING_X     253 # ((SCREEN_WIDTH  - BALL_SIZE) / 2)
-    .eqv BALL_STARTING_Y     125 # ((SCREEN_HEIGHT - BALL_SIZE) / 2)
-    .eqv BALL_STARTING_SPEED 1
+    .eqv BALL_SIZE  10
+    .eqv BALL_SPEED 1
 
     ball:
-        ball_x:     .word BALL_STARTING_X
-        ball_y:     .word BALL_STARTING_Y
+        ball_x:     .word 0
+        ball_y:     .word 0
         ball_vel_x: .word 1
         ball_vel_y: .word 1
-        ball_speed: .word BALL_STARTING_SPEED
+        
+    last_ball_x: .word 0
+    last_ball_y: .word 0
 
-    .eqv PADDLE_WIDTH  5
-    .eqv PADDLE_HEIGHT 25
-    .eqv PADDLE_SPEED  3
-
-    .eqv PADDLE_0_STARTING_X 10
-    .eqv PADDLE_0_STARTING_Y 115 # ((SCREEN_HEIGHT - PADDLE_HEIGHT) / 2)
+    .eqv PADDLE_WIDTH  10
+    .eqv PADDLE_HEIGHT 40
+    .eqv PADDLE_SPEED  20
+    .eqv PADDLE_0_STARTING_X 20
 
     paddle_0:
-        paddle_0_x:     .word PADDLE_0_STARTING_X
-        paddle_0_y:     .word PADDLE_0_STARTING_Y
+        paddle_0_x:     .word 0
+        paddle_0_y:     .word 0
         paddle_0_score: .word 0
 
-    .eqv PADDLE_1_STARTING_X 497 # (SCREEN_WIDTH - PADDLE_WIDTH - PADDLE_0_STARTING_X)
-    .eqv PADDLE_1_STARTING_Y PADDLE_0_STARTING_Y
+    last_paddle_0_x: .word 0
+    last_paddle_0_y: .word 0
 
     paddle_1:
-        paddle_1_x:     .word PADDLE_1_STARTING_X
-        paddle_1_y:     .word PADDLE_1_STARTING_Y
+        paddle_1_x:     .word 0
+        paddle_1_y:     .word 0
         paddle_1_score: .word 0
+
+    last_paddle_1_x: .word 0
+    last_paddle_1_y: .word 0
 
     .eqv Game_State_Serving 0
     .eqv Game_State_Playing 1
     game_state:
         .word Game_State_Serving
+    
+    player_0_score_message: .asciiz "Player 0 Score: "
+    player_1_score_message: .asciiz ", Player 1 Score: "
+    ENDLINE: .asciiz "\n"
 
 # Text Section
 # ----------------------------------------------- #
 .text
 
 main:
-    main_loop:
-        la $t0, framebuffer
-        li $t1, 0 # Black Color Value
-        li $t2, 0 # i = 0
-        clear_screen_loop:
-            sw   $t1, 0($t0)  # *Bitmap = 0
-            addi $t0, $t0, 4  # Bitmap += bytes_per_pixel
-            addi $t2, $t2, 1  # i++
-            li   $t3, 0x20000 # SCREEN_WIDTH * SCREEN_HEIGHT
-            bne  $t2, $t3, clear_screen_loop
-
-        jal draw_scores
-
-        lw $a0, ball_x
-        lw $a1, ball_y
-        li $a2, BALL_SIZE
-        li $a3, BALL_SIZE
-        jal draw_rect
-
-        lw $a0, paddle_0_x
-        lw $a1, paddle_0_y
-        li $a2, PADDLE_WIDTH
-        li $a3, PADDLE_HEIGHT
-        jal draw_rect
-
-        lw $a0, paddle_1_x
-        lw $a1, paddle_1_y
-        li $a2, PADDLE_WIDTH
-        li $a3, PADDLE_HEIGHT
-        jal draw_rect
+    jal reset_global_variables
+    game_loop:
+        # Store the position of the objects to be drawn, before being modified.
+        lw $t0,      ball_x
+        sw $t0, last_ball_x
+        lw $t0,      ball_y
+        sw $t0, last_ball_y
+        lw $t0,      paddle_0_x
+        sw $t0, last_paddle_0_x
+        lw $t0,      paddle_0_y
+        sw $t0, last_paddle_0_y
+        lw $t0,      paddle_1_x
+        sw $t0, last_paddle_1_x
+        lw $t0,      paddle_1_y
+        sw $t0, last_paddle_1_y
 
         lw $t0, game_state
         li $t1, Game_State_Serving
         beq $t0, $t1, case_serving
 
         case_playing:
-            lw  $t1, ball_speed
+            li  $t1, BALL_SPEED
             # Move the ball on the X Axis.
             lw  $t2, ball_vel_x
             mul $t2, $t2, $t1
@@ -99,49 +101,47 @@ main:
             add $t0, $t0, $t2
             sw  $t0, ball_y
 
-            # Checking if Player 0 moves up.
-            lw  $t0, 0xffff0000
-            beq $t0, $zero, key_w_is_NOT_held # if (key_event != 0)
-                lw  $t0, 0xffff0004
+            # Checking players input
+            lw   $t0, KEY_EVENT
+            beqz $t0, key_event_is_0 # if (key_event != 0)
+
+                # Checking if Player 0 moves up.
+                lw  $t0, KEY_PRESSED
                 li  $t1, 119 # w
-                bne $t0, $t1, key_w_is_NOT_held # if (key_pressed == 'w')
+                bne $t0, $t1, player_0_is_NOT_moving_up # if (key_pressed == 'w')
                     lw   $t0, paddle_0_y
                     addi $t0, $t0, -PADDLE_SPEED
                     sw   $t0, paddle_0_y
-            key_w_is_NOT_held:
+                player_0_is_NOT_moving_up:
 
-            # Checking if Player 0 moves down.
-            lw  $t0, 0xffff0000
-            beq $t0, $zero, key_s_is_NOT_held # if (key_event != 0)
-                lw  $t0, 0xffff0004
+                # Checking if Player 0 moves down.
+                lw  $t0, KEY_PRESSED
                 li  $t1, 115 # s
-                bne $t0, $t1, key_s_is_NOT_held # if (key_pressed == 's')
+                bne $t0, $t1, player_0_is_NOT_moving_down # if (key_pressed == 's')
                     lw   $t0, paddle_0_y
                     addi $t0, $t0, PADDLE_SPEED
                     sw   $t0, paddle_0_y
-            key_s_is_NOT_held:
+                player_0_is_NOT_moving_down:
 
-            # Checking if Player 1 moves up.
-            lw  $t0, 0xffff0000
-            beq $t0, $zero, key_i_is_NOT_held # if (key_event != 0)
-                lw  $t0, 0xffff0004
+                # Checking if Player 1 moves up.
+                lw  $t0, KEY_PRESSED
                 li  $t1, 105 # i
-                bne $t0, $t1, key_i_is_NOT_held # if (key_pressed == 'i')
+                bne $t0, $t1, player_1_is_NOT_moving_up # if (key_pressed == 'i')
                     lw   $t0, paddle_1_y
                     addi $t0, $t0, -PADDLE_SPEED
                     sw   $t0, paddle_1_y
-            key_i_is_NOT_held:
+                player_1_is_NOT_moving_up:
 
-            # Checking if Player 1 moves down.
-            lw  $t0, 0xffff0000
-            beq $t0, $zero, key_k_is_NOT_held # if (key_event != 0)
-                lw  $t0, 0xffff0004
+                # Checking if Player 1 moves down.
+                lw  $t0, KEY_PRESSED
                 li  $t1, 107 # k
-                bne $t0, $t1, key_k_is_NOT_held # if (key_pressed == 'k')
+                bne $t0, $t1, player_1_is_NOT_moving_down # if (key_pressed == 'k')
                     lw   $t0, paddle_1_y
                     addi $t0, $t0, PADDLE_SPEED
                     sw   $t0, paddle_1_y
-            key_k_is_NOT_held:
+                player_1_is_NOT_moving_down:
+
+            key_event_is_0:
 
             # Clamping the first paddle's position to always appear in the screen.
             lw   $a0, paddle_0_y
@@ -186,7 +186,6 @@ main:
             ball_collided_with_paddle:
                 la  $a0, ball_vel_x
                 jal bounce_ball
-                jal accelerate_ball
             ball_did_NOT_collide_with_paddle:
 
             # Player 0 scored.
@@ -199,6 +198,7 @@ main:
                 lw   $t0, paddle_0_score
                 addi $t0, $t0, 1
                 sw   $t0, paddle_0_score
+                jal  print_scores
                 jal  transition_to_serving
             player_0_did_not_score:
 
@@ -210,22 +210,71 @@ main:
                 lw   $t0, paddle_1_score
                 addi $t0, $t0, 1
                 sw   $t0, paddle_1_score
+                jal  print_scores
                 jal  transition_to_serving
             player_1_did_not_score:
 
             j case_none
 
         case_serving:
-            lw  $t0, 0xffff0000
-            beq $t0, $zero, case_none # if (key_event != 0)
-                lw  $t0, 0xffff0004
+            lw   $t0, KEY_EVENT
+            beqz $t0, case_none # if (key_event != 0)
+                lw  $t0, KEY_PRESSED
                 li  $t1, 32 # space
                 bne $t0, $t1, case_none # if (key_pressed == ' ')
                     li $t0, Game_State_Playing
                     sw $t0, game_state
 
         case_none:
-        j   main_loop
+        # Clearing the last frame of the Ball
+        lw $a0, last_ball_x
+        lw $a1, last_ball_y
+        li $a2, BALL_SIZE
+        li $a3, BALL_SIZE
+        li $t1, CLEAR_COLOR
+        jal draw_rect
+
+        # Clearing the last frame of the paddle of Player 0
+        lw $a0, last_paddle_0_x
+        lw $a1, last_paddle_0_y
+        li $a2, PADDLE_WIDTH
+        li $a3, PADDLE_HEIGHT
+        li $t1, CLEAR_COLOR
+        jal draw_rect
+
+        # Clearing the last frame of the paddle of Player 1
+        lw $a0, last_paddle_1_x
+        lw $a1, last_paddle_1_y
+        li $a2, PADDLE_WIDTH
+        li $a3, PADDLE_HEIGHT
+        li $t1, CLEAR_COLOR
+        jal draw_rect
+
+        # Drawing the Ball
+        lw $a0, ball_x
+        lw $a1, ball_y
+        li $a2, BALL_SIZE
+        li $a3, BALL_SIZE
+        li $t1, COLOR_WHITE
+        jal draw_rect
+
+        # Drawing the paddle of Player 0
+        lw $a0, paddle_0_x
+        lw $a1, paddle_0_y
+        li $a2, PADDLE_WIDTH
+        li $a3, PADDLE_HEIGHT
+        li $t1, COLOR_WHITE
+        jal draw_rect
+
+        # Drawing the paddle of Player 1
+        lw $a0, paddle_1_x
+        lw $a1, paddle_1_y
+        li $a2, PADDLE_WIDTH
+        li $a3, PADDLE_HEIGHT
+        li $t1, COLOR_WHITE
+        jal draw_rect
+
+        j game_loop
 
 # Helper Functions
 # ----------------------------------------------- #
@@ -256,10 +305,9 @@ clamp:
 #     - a1: y coordinate
 #     - a2: width
 #     - a3: height
+#     - t1: color
 draw_rect:
     li $t0, SCREEN_WIDTH
-    li $t1, 0xFFFFFFFF # color
-
     li $t2, 0 # $t2: y_offset
     rectangle_loop_y:
         li $t3, 0 # $t3: x_offset
@@ -282,33 +330,63 @@ draw_rect:
     jr  $ra
 
 
+# returns:
+#     - v0: 1 or -1
+random_sign:
+    li $a1, 2  # bounds: [0, 2)
+    li $v0, 42 # random integer in those bounds
+    syscall
+
+    # Now $a0 is 0 or 1
+    bnez $a0, random_sign_is_negative
+        li $v0, 1
+        jr $ra
+    random_sign_is_negative:
+        li $v0, -1
+        jr $ra
+
+
+reset_global_variables:
 transition_to_serving:
+    add $sp, $sp, -4
+    sw  $ra, 0($sp)
+    
     li $t0, PADDLE_0_STARTING_X
     sw $t0, paddle_0_x
-    li $t0, PADDLE_0_STARTING_Y
-    sw $t0, paddle_0_y
 
-    li $t0, PADDLE_1_STARTING_X
-    sw $t0, paddle_1_x
-    li $t0, PADDLE_1_STARTING_Y
-    sw $t0, paddle_1_y
+    li   $t0, SCREEN_HEIGHT
+    addi $t0, $t0, -PADDLE_HEIGHT
+    srl  $t0, $t0, 1
+    sw   $t0, paddle_0_y # paddle_0_y = ((SCREEN_HEIGHT - PADDLE_HEIGHT) / 2)
+    sw   $t0, paddle_1_y # paddle_1_y = ((SCREEN_HEIGHT - PADDLE_HEIGHT) / 2)
 
-    li $t0, BALL_STARTING_X
-    sw $t0, ball_x
-    li $t0, BALL_STARTING_Y
-    sw $t0, ball_y
+    li   $t0, SCREEN_WIDTH
+    addi $t0, $t0, -PADDLE_WIDTH
+    addi $t0, $t0, -PADDLE_0_STARTING_X
+    sw   $t0, paddle_1_x # paddle_1_x = (SCREEN_WIDTH - PADDLE_WIDTH - PADDLE_0_STARTING_X)
 
-    li $t0, 1
-    sw $t0, ball_vel_x
-    sw $t0, ball_vel_y
+    li   $t0, SCREEN_WIDTH
+    addi $t0, $t0, -BALL_SIZE
+    srl  $t0, $t0, 1
+    sw   $t0, ball_x # ball_x = ((SCREEN_WIDTH  - BALL_SIZE) / 2) 
 
-    li $t0, BALL_STARTING_SPEED
-    sw $t0, ball_speed
+    li   $t0, SCREEN_HEIGHT
+    addi $t0, $t0, -BALL_SIZE
+    srl  $t0, $t0, 1
+    sw   $t0, ball_y # ball_y = ((SCREEN_HEIGHT  - BALL_SIZE) / 2) 
+
+    jal random_sign
+    sw $v0, ball_vel_x
+
+    jal random_sign
+    sw $v0, ball_vel_y
 
     li $t0, Game_State_Serving
     sw $t0, game_state
 
-    jr $ra
+    lw  $ra, 0($sp)
+    add $sp, $sp, 4
+    jr  $ra
 
 
 # args:
@@ -360,37 +438,30 @@ bounce_ball:
     jr $ra
 
 
-accelerate_ball:
-    lw   $t0, ball_speed
-    addi $t0, $t0, 1
-    sw   $t0, ball_speed
-    jr $ra
+print_scores:
+    # Print the Player 0 score message
+    li $v0, 4
+    la $a0, player_0_score_message
+    syscall
+    
+    # Print the Player 0 score
+    li $v0, 1
+    lw $a0, paddle_0_score
+    syscall
 
-# TODO: Fix this (Will probably print the numbers in the console.)
-draw_scores:
-    # addi $sp, $sp, -4
-    # sw   $ra, 0($sp)
-    #
-    # lw   $a0, paddle_0_score
-    # jal  get_digit_count
-    #
-    # li   $a0, SCREEN_WIDTH/2 - 2
-    # li   $a1, 10
-    # lw   $a2, paddle_0_score
-    # move $a3, $v0
-    # jal  draw_u32
-    #
-    # lw   $a0, paddle_1_score
-    # jal  get_digit_count
-    #
-    # li   $a0, SCREEN_WIDTH/2 + 2
-    # li   $a1, 10
-    # lw   $a2, paddle_1_score
-    # move $a3, $v0
-    # jal  draw_u32
-    #
-    # lw   $ra, 0($sp)
-    # addi $sp, $sp, 4
+    # Print the Player 1 score message
+    li $v0, 4
+    la $a0, player_1_score_message
+    syscall
+
+    # Print the Player 1 score
+    li $v0, 1
+    lw $a0, paddle_1_score
+    syscall
+    
+    # Print a new line
+    li $v0, 4
+    la $a0, ENDLINE
+    syscall        
+            
     jr   $ra
-
-
